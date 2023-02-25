@@ -3,20 +3,13 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/go-telegram-bot-api/telegram-bot-api"
 )
-
-// const BotToken = "11122:jjhshgg"
-// var AllowedUsers = map[int]bool{
-// 	1111: true,
-// }
-// var ChatsToSignal = []int{
-// 	122112,
-// }
 
 func main() {
 	bot, err := tgbotapi.NewBotAPI(BotToken)
@@ -43,10 +36,6 @@ func main() {
 		}
 
 		if update.Message.Text == "/status" {
-
-			user := update.Message.From
-			log.Printf("%d[%s %s] %s", user.ID, user.FirstName, user.LastName, update.Message.Text)
-
 			var outputStr = ""
 			devices, err := getDevices()
 			if err != nil {
@@ -82,6 +71,43 @@ func main() {
 			}
 			msg := tgbotapi.NewMessage(update.Message.Chat.ID, formattedServicesStatuses)
 			sendFormattedMsg(bot, &msg, true)
+		}
+		if update.Message.Text == "/storage" {
+			devices, err := getDevices()
+			if err != nil {
+				log.Fatal(err)
+			}
+			var outputStr = "DISK USAGE:\n"
+			for _, device := range devices {
+				outputStr += fmt.Sprintf("%s:\n", device.Name)
+				for _, partition := range device.Partitions {
+					outputStr += fmt.Sprintf("%-10s %-5s/ %-5s\n", partition.Name, partition.Used, partition.Total)
+				}
+			}
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, outputStr)
+			sendFormattedMsg(bot, &msg, true)
+		}
+		if update.Message.Text == "/smart" {
+			devices, err := getDevices()
+			if err != nil {
+				log.Fatal(err)
+			}
+			smartStatuses, err := getDeviceSmartStatuses(devices)
+			if err != nil {
+				log.Fatal(err)
+			}
+			var outputStr = "SMART:\n"
+			for _, smartStatus := range smartStatuses {
+				outputStr += formatSmartStatus(smartStatus) + "\n"
+			}
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, outputStr)
+			sendFormattedMsg(bot, &msg, true)
+		}
+		if update.Message.Text == "/report" {
+			sendDevicesFullReportAsFiles(bot, update.Message.Chat.ID)
+		}
+		if update.Message.Text == "/reboot" {
+			exec.Command("sudo", "reboot")
 		}
 	}
 }
@@ -124,7 +150,7 @@ func backgroundSmartCheck(bot *tgbotapi.BotAPI) {
 					}
 				}
 			}
-			time.Sleep(3 * time.Hour)
+			time.Sleep(SMARTCheckInterval)
 		}
 	}()
 }
@@ -143,7 +169,7 @@ func backgroundServicesCheck(bot *tgbotapi.BotAPI) {
 					}
 				}
 			}
-			time.Sleep(1 * time.Hour)
+			time.Sleep(ServicesCheckInterval)
 		}
 	}()
 }
@@ -174,7 +200,6 @@ func getDevices() ([]Device, error) {
 	}
 	var devices []Device
 	for _, line := range strings.Split(string(output), "\n") {
-		log.Println(line)
 		parts := strings.Fields(line)
 		if len(parts) < 5 {
 			continue // skip incomplete lines
@@ -205,7 +230,6 @@ func getDevices() ([]Device, error) {
 				Partitions: []Partition{partition},
 			})
 		}
-		log.Printf("%-12s %-5s/%-5s", device, parts[2], parts[1])
 	}
 	return devices, nil
 }
@@ -229,6 +253,37 @@ func getDeviceSmartStatuses(devices []Device) ([]DeviceSmartStatus, error) {
 
 func formatSmartStatus(smartStatus DeviceSmartStatus) string {
 	return fmt.Sprintf("%-10s %s %s", smartStatus.Device, smartStatus.Emoji, smartStatus.Status)
+}
+
+func sendDevicesFullReportAsFiles(bot *tgbotapi.BotAPI, chatId int64) {
+	devices, err := getDevices()
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, device := range devices {
+		output, err := exec.Command("sudo", "smartctl", "-a", device.Name).Output()
+		if err != nil {
+			log.Fatal(err)
+		}
+		//write to tmp file with device name as current date in format 2021-01-01Thh:mm:ss
+		deviceName := strings.TrimPrefix(device.Name, "/dev/")
+		filename := "/tmp/" + deviceName + "-" + time.Now().Format("2006-01-02") + ".txt"
+		err = os.WriteFile(filename, output, 0644)
+		if err != nil {
+			log.Fatal(err)
+		}
+		//send file to telegram
+		file, err := os.Open(filename)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer file.Close()
+		msg := tgbotapi.NewDocumentUpload(chatId, tgbotapi.FileBytes{Name: device.Name + "-" + time.Now().Format("2006-01-02") + ".txt", Bytes: output})
+		_, err = bot.Send(msg)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 }
 
 func sendFormattedMsg(bot *tgbotapi.BotAPI, message *tgbotapi.MessageConfig, code bool) {
