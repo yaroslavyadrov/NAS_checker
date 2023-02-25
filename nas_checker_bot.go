@@ -5,23 +5,29 @@ import (
 	"log"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/go-telegram-bot-api/telegram-bot-api"
 )
 
-// const botToken = "11122:jjhshgg"
-// var allowedUsers = map[int]bool{
+// const BotToken = "11122:jjhshgg"
+// var AllowedUsers = map[int]bool{
 // 	1111: true,
+// }
+// var ChatsToSignal = []int{
+// 	122112,
 // }
 
 func main() {
-	bot, err := tgbotapi.NewBotAPI(botToken)
+	bot, err := tgbotapi.NewBotAPI(BotToken)
 	if err != nil {
 		log.Panic(err)
 	}
 
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
+
+	beckgroundSmartCheck(bot)
 
 	updates, err := bot.GetUpdatesChan(u)
 	if err != nil {
@@ -30,7 +36,7 @@ func main() {
 
 	for update := range updates {
 		log.Printf("chat_id: %d, user_id: %d, username: %s, first_name: %s, last_name: %s, text: %s", update.Message.Chat.ID, update.Message.From.ID, update.Message.From.UserName, update.Message.From.FirstName, update.Message.From.LastName, update.Message.Text)
-		if update.Message == nil || !allowedUsers[update.Message.From.ID] {
+		if update.Message == nil || !AllowedUsers[update.Message.From.ID] {
 			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Access denied")
 			bot.Send(msg)
 			continue
@@ -85,6 +91,35 @@ type DeviceSmartStatus struct {
 	Device string
 	Status string
 	Emoji  string
+}
+
+func beckgroundSmartCheck(bot *tgbotapi.BotAPI) {
+	// Start a background goroutine that runs every 3 hours
+	go func() {
+		for {
+			devices, err := getDevices()
+			if err != nil {
+				log.Fatal(err)
+			}
+			smartStatuses, err := getDeviceSmartStatuses(devices)
+			if err != nil {
+				log.Fatal(err)
+			}
+			for _, smartStatus := range smartStatuses {
+				if smartStatus.Status != "PASSED" {
+					msg := fmt.Sprintf("Device %s has SMART status %s %s", smartStatus.Device, smartStatus.Status, smartStatus.Emoji)
+					log.Printf("Sending message: %s", msg)
+					for _, chatID := range ChatsToSignal {
+						_, err := bot.Send(tgbotapi.NewMessage(chatID, msg))
+						if err != nil {
+							log.Printf("Error sending message: %v", err)
+						}
+					}
+				}
+			}
+			time.Sleep(3 * time.Hour)
+		}
+	}()
 }
 
 func getDevices() ([]Device, error) {
