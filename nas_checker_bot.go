@@ -73,7 +73,7 @@ func main() {
 			}
 			outputStr += "\n" + formattedServicesStatuses
 			msg := tgbotapi.NewMessage(update.Message.Chat.ID, outputStr)
-			sendFormattedMsg(bot, &msg)
+			sendFormattedMsg(bot, &msg, true)
 		}
 		if update.Message.Text == "/services" {
 			formattedServicesStatuses, err := getFormattedServicesStatuses(ServicesToCheck)
@@ -81,7 +81,7 @@ func main() {
 				log.Fatal(err)
 			}
 			msg := tgbotapi.NewMessage(update.Message.Chat.ID, formattedServicesStatuses)
-			sendFormattedMsg(bot, &msg)
+			sendFormattedMsg(bot, &msg, true)
 		}
 	}
 }
@@ -116,11 +116,11 @@ func backgroundSmartCheck(bot *tgbotapi.BotAPI) {
 			}
 			for _, smartStatus := range smartStatuses {
 				if smartStatus.Status != "PASSED" {
-					msg := fmt.Sprintf("Device %s has SMART status %s %s", smartStatus.Device, smartStatus.Status, smartStatus.Emoji)
+					msg := fmt.Sprintf("Device __**%s**__ has SMART status __**%s**__ %s", smartStatus.Device, smartStatus.Status, smartStatus.Emoji)
 					log.Printf("Sending message: %s", msg)
 					for _, chatID := range ChatsToSignal {
 						msg := tgbotapi.NewMessage(chatID, msg)
-						sendFormattedMsg(bot, &msg)
+						sendFormattedMsg(bot, &msg, false)
 					}
 				}
 			}
@@ -133,16 +133,13 @@ func backgroundServicesCheck(bot *tgbotapi.BotAPI) {
 	go func() {
 		for {
 			for _, service := range ServicesToCheck {
-				status, err := getServiceStatus(service)
-				if err != nil {
-					log.Fatal(err)
-				}
+				status := getServiceStatus(service)
 				if status != "active" {
-					msg := fmt.Sprintf("Service %s has status %s", service, status)
+					msg := fmt.Sprintf("Service __**%s**__ has status __**%s**__", service, status)
 					log.Printf("Sending message: %s", msg)
 					for _, chatID := range ChatsToSignal {
 						msg := tgbotapi.NewMessage(chatID, msg)
-						sendFormattedMsg(bot, &msg)
+						sendFormattedMsg(bot, &msg, false)
 					}
 				}
 			}
@@ -151,21 +148,15 @@ func backgroundServicesCheck(bot *tgbotapi.BotAPI) {
 	}()
 }
 
-func getServiceStatus(service string) (string, error) {
-	output, err := exec.Command("sh", "-c", "systemctl is-active \""+service+"\"").Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(output)), nil
+func getServiceStatus(service string) string {
+	output, _ := exec.Command("sh", "-c", "systemctl is-active \""+service+"\"").Output()
+	return strings.TrimSpace(string(output))
 }
 
 func getFormattedServicesStatuses(services []string) (string, error) {
 	var outputStr = "SERVICES:\n"
 	for _, service := range ServicesToCheck {
-		status, err := getServiceStatus(service)
-		if err != nil {
-			return "", err
-		}
+		status := getServiceStatus(service)
 		if status == "active" {
 			status = "✅ " + status
 		} else {
@@ -240,8 +231,10 @@ func formatSmartStatus(smartStatus DeviceSmartStatus) string {
 	return fmt.Sprintf("%-10s %s %s", smartStatus.Device, smartStatus.Emoji, smartStatus.Status)
 }
 
-func sendFormattedMsg(bot *tgbotapi.BotAPI, message *tgbotapi.MessageConfig) {
-	message.Text = fmt.Sprintf("```\n%s\n```", message.Text)
+func sendFormattedMsg(bot *tgbotapi.BotAPI, message *tgbotapi.MessageConfig, code bool) {
+	if code {
+		message.Text = fmt.Sprintf("```\n%s\n```", message.Text)
+	}
 	message.ParseMode = "MarkdownV2"
 	_, err := bot.Send(message)
 	if err != nil {
