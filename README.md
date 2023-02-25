@@ -6,7 +6,6 @@ Bot also send nottifications if services are down or SMART status is not PASSED.
 
 <img width="531" alt="sample" src="https://user-images.githubusercontent.com/10099316/221376713-6ae66bef-969d-4f6c-9f48-cf2cf12058bf.png">
 
-
 ## Commands list
 
 - `/status` - Full report of the system status
