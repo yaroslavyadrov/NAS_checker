@@ -29,11 +29,35 @@ func main() {
 		log.Panic(err)
 	}
 
+	var keyboard = tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("/status"),
+		),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("/storage"),
+			tgbotapi.NewKeyboardButton("/smart"),
+			tgbotapi.NewKeyboardButton("/services"),
+			tgbotapi.NewKeyboardButton("/report"),
+		),
+	)
+
 	for update := range updates {
 		if update.Message == nil || !AllowedUsers[update.Message.From.ID] {
 			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Access denied")
 			bot.Send(msg)
 			continue
+		}
+
+		if update.Message.Text == "/menuon" {
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ok, "+update.Message.From.FirstName)
+			msg.ReplyMarkup = keyboard
+			bot.Send(msg)
+		}
+
+		if update.Message.Text == "/menuoff" {
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ok, "+update.Message.From.FirstName)
+			msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(true)
+			bot.Send(msg)
 		}
 
 		if update.Message.Text == "/status" {
