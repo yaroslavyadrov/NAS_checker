@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"time"
 
@@ -230,6 +231,12 @@ func getDevices() ([]Device, error) {
 				Partitions: []Partition{partition},
 			})
 		}
+	}
+	// Sort partitions by name
+	for i := range devices {
+		sort.Slice(devices[i].Partitions, func(j, k int) bool {
+			return devices[i].Partitions[j].Name < devices[i].Partitions[k].Name
+		})
 	}
 	return devices, nil
 }
